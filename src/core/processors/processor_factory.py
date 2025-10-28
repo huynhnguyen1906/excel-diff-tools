@@ -3,8 +3,8 @@ Processor Factory
 シート名に基づいて適切なプロセッサを返すファクトリ
 """
 from .base_processor import BaseProcessor
-from .haritsuke_processor import HaritsukeProcessor
-from .monthly_sales_processor import MonthlySalesProcessor
+from .haritsuke import HaritsukeProcessor
+from .monthly_sales import MonthlySalesProcessor
 
 
 class ProcessorFactory:

@@ -1,6 +1,6 @@
 """
-Excel 書き込みモジュール
-差分結果を Excel ファイルとして出力
+Haritsuke Excel Writer
+貼付シート専用の Excel 書き込みモジュール - 差分結果を Excel ファイルとして出力
 """
 from pathlib import Path
 from datetime import datetime
@@ -11,12 +11,12 @@ from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from core.diff_engine import DiffResult
+from .diff_engine import HaritsukeDiffResult
 from utils.constants import DIFF_COLORS
 
 
-class ExcelWriter:
-    """差分結果を Excel ファイルとして出力するクラス"""
+class HaritsukeExcelWriter:
+    """貼付シート専用 - 差分結果を Excel ファイルとして出力するクラス"""
     
     def __init__(self, output_dir: Path, sheet_name: str):
         """
@@ -53,7 +53,7 @@ class ExcelWriter:
     
     def write_diff_results(self, 
                           columns: List[str], 
-                          results: List[DiffResult]) -> Path:
+                          results: List[HaritsukeDiffResult]) -> Path:
         """
         差分結果を Excel ファイルに書き込み
         
@@ -99,7 +99,7 @@ class ExcelWriter:
             cell.alignment = Alignment(horizontal='center', vertical='center')
             cell.border = self.border
     
-    def _write_diff_row(self, result: DiffResult, columns: List[str]):
+    def _write_diff_row(self, result: HaritsukeDiffResult, columns: List[str]):
         """
         1行の差分データを書き込み
         

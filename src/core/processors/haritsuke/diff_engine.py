@@ -1,6 +1,6 @@
 """
-差分エンジン
-レコード番号ベースの比較アルゴリズムを実装
+Haritsuke Diff Engine
+貼付シート専用の差分検出エンジン - レコード番号ベースの比較アルゴリズム
 """
 from dataclasses import dataclass
 from typing import List, Literal, Optional, Tuple, Dict
@@ -12,7 +12,7 @@ from core.data_normalizer import DataNormalizer
 
 
 @dataclass
-class DiffResult:
+class HaritsukeDiffResult:
     """差分結果を表すデータクラス"""
     row_index: int  # 出力 Excel での行番号
     change_type: Literal['added', 'deleted', 'changed']  # 変更タイプ
@@ -22,8 +22,8 @@ class DiffResult:
     record_number: Optional[str] = None  # レコード番号 (ソート用)
 
 
-class DiffEngine:
-    """レコード番号ベース差分比較エンジン"""
+class HaritsukeDiffEngine:
+    """貼付シート専用 - レコード番号ベース差分比較エンジン"""
     
     # 類似度のしきい値
     SIMILARITY_THRESHOLD = 0.6
@@ -53,10 +53,10 @@ class DiffEngine:
             self.old_df = old_df.copy()
             self.new_df = new_df.copy()
         
-        self.results: List[DiffResult] = []
+        self.results: List[HaritsukeDiffResult] = []
     
     @staticmethod
-    def compare_dataframes(old_df: pd.DataFrame, new_df: pd.DataFrame) -> List[DiffResult]:
+    def compare_dataframes(old_df: pd.DataFrame, new_df: pd.DataFrame) -> List[HaritsukeDiffResult]:
         """
         2つの DataFrame を比較する便利メソッド
         
@@ -67,10 +67,10 @@ class DiffEngine:
         Returns:
             差分結果のリスト
         """
-        engine = DiffEngine(old_df, new_df)
+        engine = HaritsukeDiffEngine(old_df, new_df)
         return engine.compare()
     
-    def compare(self) -> List[DiffResult]:
+    def compare(self) -> List[HaritsukeDiffResult]:
         """
         レコード番号ベースの比較を実行
         
@@ -99,7 +99,7 @@ class DiffEngine:
                 # 新規レコード番号 → ADDED
                 for new_idx in new_rows:
                     new_row = self.new_df.iloc[new_idx]
-                    results.append(DiffResult(
+                    results.append(HaritsukeDiffResult(
                         row_index=0,  # 後で更新
                         change_type='added',
                         old_data=None,
@@ -112,7 +112,7 @@ class DiffEngine:
                 # 削除されたレコード番号 → DELETED
                 for old_idx in old_rows:
                     old_row = self.old_df.iloc[old_idx]
-                    results.append(DiffResult(
+                    results.append(HaritsukeDiffResult(
                         row_index=0,  # 後で更新
                         change_type='deleted',
                         old_data=old_row.to_dict(),
@@ -171,7 +171,7 @@ class DiffEngine:
     def _compare_within_group(self, 
                               old_indices: List[int], 
                               new_indices: List[int],
-                              record_num: str) -> List[DiffResult]:
+                              record_num: str) -> List[HaritsukeDiffResult]:
         """
         同じレコード番号のグループ内で比較
         
@@ -195,7 +195,7 @@ class DiffEngine:
                 changed_cols = self._diff_cells(old_row, new_row)
                 
                 if changed_cols:
-                    results.append(DiffResult(
+                    results.append(HaritsukeDiffResult(
                         row_index=0,  # 後で更新
                         change_type='changed',
                         old_data=old_row.to_dict(),
@@ -212,7 +212,7 @@ class DiffEngine:
                     if i < len(old_rows):
                         changed_cols = self._diff_cells(old_rows[i], new_row)
                         if changed_cols:
-                            results.append(DiffResult(
+                            results.append(HaritsukeDiffResult(
                                 row_index=0,
                                 change_type='changed',
                                 old_data=old_rows[i].to_dict(),
@@ -223,7 +223,7 @@ class DiffEngine:
                 
                 # 残りの old rows は削除
                 for i in range(len(new_rows), len(old_rows)):
-                    results.append(DiffResult(
+                    results.append(HaritsukeDiffResult(
                         row_index=0,
                         change_type='deleted',
                         old_data=old_rows[i].to_dict(),
@@ -237,7 +237,7 @@ class DiffEngine:
                     if i < len(new_rows):
                         changed_cols = self._diff_cells(old_row, new_rows[i])
                         if changed_cols:
-                            results.append(DiffResult(
+                            results.append(HaritsukeDiffResult(
                                 row_index=0,
                                 change_type='changed',
                                 old_data=old_row.to_dict(),
@@ -248,7 +248,7 @@ class DiffEngine:
                 
                 # 残りの new rows は追加
                 for i in range(len(old_rows), len(new_rows)):
-                    results.append(DiffResult(
+                    results.append(HaritsukeDiffResult(
                         row_index=0,
                         change_type='added',
                         old_data=None,
@@ -276,7 +276,7 @@ class DiffEngine:
         matcher = SequenceMatcher(None, sig1, sig2)
         return matcher.ratio()
     
-    def _compare_without_record_number(self) -> List[DiffResult]:
+    def _compare_without_record_number(self) -> List[HaritsukeDiffResult]:
         """
         レコード番号なしの従来の比較方法
         (Fallback用 - 現在は使用しない想定)
