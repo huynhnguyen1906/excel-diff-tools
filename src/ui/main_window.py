@@ -7,16 +7,13 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QFileDialog, QMessageBox,
-    QProgressDialog
+    QProgressDialog, QComboBox
 )
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont
 
 # Core modules をインポート
-from core.excel_reader import ExcelReader
-from core.data_normalizer import DataNormalizer
-from core.diff_engine import DiffEngine
-from core.excel_writer import ExcelWriter
+from core.processors import ProcessorFactory
 
 
 def get_executable_dir():
@@ -48,64 +45,32 @@ class DiffWorker(QThread):
     def run(self):
         """バックグラウンドで処理を実行"""
         try:
-            # Step 1: データ読み込み
-            self.progress.emit(10, "データを読み込んでいます...")
+            # プロセッサを取得
+            self.progress.emit(10, "処理を開始しています...")
             
-            old_reader = ExcelReader(self.old_file)
-            new_reader = ExcelReader(self.new_file)
-            
-            old_df, error_msg = old_reader.read_sheet(self.sheet_name)
-            if old_df is None:
-                self.finished.emit(None, f"旧ファイル読み込みエラー:\n{error_msg}")
+            try:
+                processor = ProcessorFactory.get_processor(self.sheet_name)
+            except ValueError as e:
+                self.finished.emit(None, str(e))
                 return
             
-            self.progress.emit(20, "データを読み込んでいます...")
+            # プロセッサで処理を実行（progress callbackを渡す）
+            output_path, diff_results, error_msg = processor.process(
+                self.old_file,
+                self.new_file,
+                self.sheet_name,
+                self.output_dir,
+                progress_callback=lambda percent, msg: self.progress.emit(percent, msg)
+            )
             
-            new_df, error_msg = new_reader.read_sheet(self.sheet_name)
-            if new_df is None:
-                self.finished.emit(None, f"新ファイル読み込みエラー:\n{error_msg}")
+            if output_path is None:
+                self.finished.emit(None, error_msg)
                 return
-            
-            self.progress.emit(30, "データを読み込んでいます...")
-            
-            # Step 2: データ正規化
-            self.progress.emit(40, "データを正規化しています...")
-            normalizer = DataNormalizer()
-            old_df_normalized = normalizer.normalize_dataframe(old_df)
-            new_df_normalized = normalizer.normalize_dataframe(new_df)
-            
-            # 列を揃える
-            old_df_aligned, new_df_aligned = normalizer.align_columns(
-                old_df_normalized, new_df_normalized
-            )
-            self.progress.emit(50, "データを正規化しています...")
-            
-            # Step 3: 差分検出
-            self.progress.emit(60, "差分を検出しています...")
-            print(f"[DEBUG] Starting diff comparison... Old rows: {len(old_df_aligned)}, New rows: {len(new_df_aligned)}")
-            
-            diff_results = DiffEngine.compare_dataframes(
-                old_df_aligned, new_df_aligned
-            )
-            
-            print(f"[DEBUG] Diff completed. Found {len(diff_results)} differences")
-            self.progress.emit(80, "差分を検出しています...")
-            
-            # Step 4: Excel 出力
-            self.progress.emit(90, "Excel ファイルを作成しています...")
-            print(f"[DEBUG] Writing Excel file...")
-            writer = ExcelWriter(self.output_dir, self.sheet_name)
-            columns = new_df_aligned.columns.tolist()
-            
-            output_path = writer.write_diff_results(columns, diff_results)
-            
-            print(f"[DEBUG] Excel file written: {output_path}")
-            self.progress.emit(100, "完了しました")
             
             # 結果を返す
             result = {
                 'output_path': output_path,
-                'diff_results': diff_results
+                'diff_results': diff_results,
             }
             self.finished.emit(result, None)
             
@@ -157,30 +122,42 @@ class MainWindow(QMainWindow):
         sheet_label.setFixedWidth(100)
         sheet_label.setStyleSheet("font-size: 12px;")
         
-        self.sheet_input = QLineEdit()
-        self.sheet_input.setPlaceholderText("例: Sheet1")
-        self.sheet_input.setFixedHeight(35)
-        self.sheet_input.setStyleSheet("""
-            QLineEdit {
+        self.sheet_combo = QComboBox()
+        self.sheet_combo.addItem("シートを選択")
+        self.sheet_combo.addItem("月別売上２")
+        self.sheet_combo.addItem("貼付")
+        self.sheet_combo.setFixedHeight(35)
+        self.sheet_combo.setStyleSheet("""
+            QComboBox {
                 padding: 5px 10px;
                 border: 2px solid #ccc;
                 border-radius: 4px;
                 font-size: 13px;
             }
-            QLineEdit:focus {
+            QComboBox:focus {
                 border: 2px solid #0078d4;
             }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 5px solid #666;
+                margin-right: 10px;
+            }
         """)
-        self.sheet_input.textChanged.connect(self._on_sheet_name_changed)
+        self.sheet_combo.currentIndexChanged.connect(self._on_sheet_changed)
         
         sheet_layout.addWidget(sheet_label)
-        sheet_layout.addWidget(self.sheet_input)
+        sheet_layout.addWidget(self.sheet_combo)
         layout.addLayout(sheet_layout)
         
         layout.addSpacing(3)
         
         # 説明テキスト
-        sheet_note = QLabel("         ※ シート名を入力すると、ファイル選択ボタンが有効になります")
+        sheet_note = QLabel("         ※ シートを選択すると、ファイル選択ボタンが有効になります")
         sheet_note.setStyleSheet("color: #888; font-size: 12px;")
         layout.addWidget(sheet_note)
         
@@ -363,17 +340,17 @@ class MainWindow(QMainWindow):
             self.new_file_input = file_input
             self.new_browse_button = browse_button
     
-    def _on_sheet_name_changed(self, text):
-        """シート名入力の変更イベント"""
-        # シート名が入力されているかチェック
-        has_sheet_name = text.strip() != ""
+    def _on_sheet_changed(self, index):
+        """シート選択の変更イベント"""
+        # "シートを選択" (index 0) が選択されているかチェック
+        has_valid_selection = index > 0
         
         # ファイル選択ボタンの有効/無効を切り替え
-        self.old_browse_button.setEnabled(has_sheet_name)
-        self.new_browse_button.setEnabled(has_sheet_name)
+        self.old_browse_button.setEnabled(has_valid_selection)
+        self.new_browse_button.setEnabled(has_valid_selection)
         
-        # ファイルが選択済みの場合、シート名変更でクリア
-        if not has_sheet_name:
+        # シート未選択の場合、ファイルパスをクリア
+        if not has_valid_selection:
             self.old_file_path = None
             self.new_file_path = None
             self.old_file_input.clear()
@@ -381,14 +358,14 @@ class MainWindow(QMainWindow):
     
     def _on_browse_clicked(self, input_widget, file_type):
         """ファイル参照ボタンのクリックイベント"""
-        # 入力されたシート名を取得
-        sheet_name = self.sheet_input.text().strip()
+        # 選択されたシート名を取得
+        sheet_name = self.sheet_combo.currentText()
         
-        if not sheet_name:
+        if sheet_name == "シートを選択":
             QMessageBox.warning(
                 self,
                 "エラー",
-                "先にシート名を入力してください"
+                "先にシートを選択してください"
             )
             return
         
@@ -402,30 +379,6 @@ class MainWindow(QMainWindow):
         if file_path:
             # ファイルパスを設定
             file_path_obj = Path(file_path)
-            
-            # Excel Reader で検証
-            reader = ExcelReader(file_path_obj)
-            is_valid, error_msg = reader.validate_file()
-            
-            if not is_valid:
-                QMessageBox.warning(
-                    self,
-                    "ファイルエラー",
-                    f"ファイルを読み込めません:\n\n{error_msg}"
-                )
-                return
-            
-            # 指定されたシートが存在するか確認
-            is_valid, error_msg = reader.validate_sheet(sheet_name)
-            if not is_valid:
-                QMessageBox.warning(
-                    self,
-                    "シートエラー",
-                    f"指定されたシートが見つかりません:\n\n{error_msg}"
-                )
-                return
-            
-            # すべて検証OKなら設定
             input_widget.setText(file_path)
             if file_type == "old":
                 self.old_file_path = file_path_obj
@@ -455,33 +408,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "エラー", "新ファイルを選択してください")
             return
         
-        sheet_name = self.sheet_input.text().strip()
-        if not sheet_name:
-            QMessageBox.warning(self, "エラー", "シート名を入力してください")
-            return
-        
-        # Excel Reader で検証
-        old_reader = ExcelReader(self.old_file_path)
-        new_reader = ExcelReader(self.new_file_path)
-        
-        # 旧ファイルのシート検証
-        is_valid, error_msg = old_reader.validate_sheet(sheet_name)
-        if not is_valid:
-            QMessageBox.warning(
-                self,
-                "シートエラー（旧ファイル）",
-                f"旧ファイルでエラーが発生しました:\n\n{error_msg}"
-            )
-            return
-        
-        # 新ファイルのシート検証
-        is_valid, error_msg = new_reader.validate_sheet(sheet_name)
-        if not is_valid:
-            QMessageBox.warning(
-                self,
-                "シートエラー（新ファイル）",
-                f"新ファイルでエラーが発生しました:\n\n{error_msg}"
-            )
+        sheet_name = self.sheet_combo.currentText()
+        if sheet_name == "シートを選択":
+            QMessageBox.warning(self, "エラー", "シートを選択してください")
             return
         
         # プログレスダイアログを表示
@@ -528,30 +457,23 @@ class MainWindow(QMainWindow):
             return
         
         # 成功の場合
-        diff_results = result['diff_results']
         output_path = result['output_path']
+        diff_results = result.get('diff_results', [])
         
+        # 差分統計を計算
         added_count = sum(1 for r in diff_results if r.change_type == 'added')
         deleted_count = sum(1 for r in diff_results if r.change_type == 'deleted')
         changed_count = sum(1 for r in diff_results if r.change_type == 'changed')
         
         # 結果メッセージ
-        if len(diff_results) == 0:
-            result_msg = (
-                "差分は検出されませんでした。\n\n"
-                "2つのファイルは同じ内容です。"
-            )
-        else:
-            result_msg = (
-                f"差分検出が完了しました！\n\n"
-                f"【検出結果】\n"
-                f"  🟢 追加: {added_count} 行\n"
-                f"  🔴 削除: {deleted_count} 行\n"
-                f"  🟡 変更: {changed_count} 行\n"
-                f"  合計: {len(diff_results)} 件の差分\n\n"
-                f"【出力ファイル】\n"
-                f"  {output_path.name}\n\n"
-                f"📂 場所: {output_path.parent}"
-            )
+        result_msg = (
+            f"【検出結果】\n"
+            f"  🟢 追加: {added_count} 行\n"
+            f"  🔴 削除: {deleted_count} 行\n"
+            f"  🟡 変更: {changed_count} 行\n"
+            f"  合計: {len(diff_results)} 件の差分\n\n"
+            f"出力ファイル:\n{output_path.name}\n\n"
+            f"保存先:\n{output_path.parent}"
+        )
         
         QMessageBox.information(self, "完了", result_msg)
