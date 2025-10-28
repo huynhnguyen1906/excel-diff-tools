@@ -16,14 +16,18 @@ class MonthlySalesProcessor(BaseProcessor):
     
     SHEET_NAME = "月別売上２"
     
+    def get_sheet_name(self) -> str:
+        """対応するシート名を返す"""
+        return self.SHEET_NAME
+    
     def process(
         self,
         old_file: Path,
         new_file: Path,
         sheet_name: str,
-        output_file: Path,
+        output_dir: Path,
         progress_callback: Optional[Callable[[int, str], None]] = None
-    ) -> Tuple[Optional[Path], Optional[List], Optional[str]]:
+    ) -> Tuple[Optional[Path], Optional[List], str]:
         """
         月別売上２シートの差分処理
         
@@ -31,7 +35,7 @@ class MonthlySalesProcessor(BaseProcessor):
             old_file: 旧ファイルのパス
             new_file: 新ファイルのパス
             sheet_name: シート名
-            output_file: 出力ファイルのパス
+            output_dir: 出力先ディレクトリ
             progress_callback: 進捗報告用コールバック関数
             
         Returns:
@@ -51,7 +55,7 @@ class MonthlySalesProcessor(BaseProcessor):
             
             is_valid, error = reader.validate_sheet(old_file, sheet_name)
             if not is_valid:
-                return None, None, f"旧ファイルシートエラー: {error}"
+                return None, None, f"旧ファイルシートエラー:\n{error}"
             
             # 新ファイル検証
             is_valid, error = reader.validate_file(new_file)
@@ -60,7 +64,7 @@ class MonthlySalesProcessor(BaseProcessor):
             
             is_valid, error = reader.validate_sheet(new_file, sheet_name)
             if not is_valid:
-                return None, None, f"新ファイルシートエラー: {error}"
+                return None, None, f"新ファイルシートエラー:\n{error}"
             
             # データ読み取り
             old_data = reader.read_sheet(old_file, sheet_name)
@@ -81,9 +85,8 @@ class MonthlySalesProcessor(BaseProcessor):
             if progress_callback:
                 progress_callback(80, "結果を出力中...")
             
-            writer = MonthlySalesExcelWriter()
+            writer = MonthlySalesExcelWriter(output_dir, sheet_name)
             output_path = writer.write_diff_result(
-                output_path=output_file,
                 header_df=new_data['header'],
                 category_df=new_data['categories'],
                 month_diffs=month_diffs,
@@ -111,7 +114,7 @@ class MonthlySalesProcessor(BaseProcessor):
             if progress_callback:
                 progress_callback(100, "完了")
             
-            return output_path, diff_results, None
+            return output_path, diff_results, ""
             
         except Exception as e:
             error_msg = f"月別売上２シート処理エラー:\n{str(e)}"

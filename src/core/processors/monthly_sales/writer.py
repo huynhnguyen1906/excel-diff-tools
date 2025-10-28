@@ -28,14 +28,21 @@ class MonthlySalesExcelWriter:
     COLOR_DECREASED = 'FF6B6B'  # 赤 (減少)
     COLOR_UNCHANGED = 'FFFFFF'  # 白 (変更なし)
     
-    def __init__(self):
-        """初期化"""
+    def __init__(self, output_dir: Path, sheet_name: str):
+        """
+        初期化
+        
+        Args:
+            output_dir: 出力ディレクトリ
+            sheet_name: シート名
+        """
+        self.output_dir = output_dir
+        self.sheet_name = sheet_name
         self.wb = None
         self.ws = None
     
     def write_diff_result(
         self,
-        output_path: Path,
         header_df: pd.DataFrame,
         category_df: pd.DataFrame,
         month_diffs: List[MonthlySalesMonthDiff],
@@ -45,7 +52,6 @@ class MonthlySalesExcelWriter:
         差分結果を Excel ファイルとして出力
         
         Args:
-            output_path: 出力先パス
             header_df: ヘッダー DataFrame (行1-6)
             category_df: カテゴリ DataFrame (列A-C)
             month_diffs: 月別差分のリスト
@@ -54,9 +60,15 @@ class MonthlySalesExcelWriter:
         Returns:
             出力ファイルパス
         """
+        # 出力ファイル名を生成
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"{self.sheet_name}_差分_{timestamp}.xlsx"
+        output_path = self.output_dir / output_filename
+        
         self.wb = Workbook()
         self.ws = self.wb.active
-        self.ws.title = "月別売上２_差分"
+        self.ws.title = f"{self.sheet_name}_差分"
         
         # 1. ヘッダー部分を書き込み (行1-6, 全列)
         self._write_header(header_df, month_diffs)
