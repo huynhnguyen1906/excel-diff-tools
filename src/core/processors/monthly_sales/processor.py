@@ -96,19 +96,29 @@ class MonthlySalesProcessor(BaseProcessor):
             # 4. サマリー作成
             summary = diff_engine.get_summary(month_diffs)
             
-            # 差分結果をリスト形式で返す (UI表示用)
+            # 差分結果を SimpleNamespace 形式で返す (UI表示用)
+            # UI が .change_type でアクセスするため
+            from types import SimpleNamespace
+            
             diff_results = []
             for month_diff in month_diffs:
                 for cell_diff in month_diff.cell_diffs:
                     if cell_diff.change_type != 'unchanged':
-                        diff_results.append({
-                            'month': month_diff.month_name,
-                            'row': cell_diff.row_index + 7,  # 実際の行番号
-                            'column': cell_diff.column_name,
-                            'type': cell_diff.change_type,
-                            'old_value': cell_diff.old_value,
-                            'new_value': cell_diff.new_value
-                        })
+                        # change_type を UI が期待する形式にマッピング
+                        # increased → changed (緑), decreased → changed (赤)
+                        ui_change_type = 'changed'  # 月別売上は全て「変更」扱い
+                        
+                        # SimpleNamespace でラップして attribute アクセスを可能にする
+                        result = SimpleNamespace(
+                            month=month_diff.month_name,
+                            row=cell_diff.row_index + 7,  # 実際の行番号
+                            column=cell_diff.column_name,
+                            change_type=ui_change_type,  # UI が期待する形式
+                            original_change_type=cell_diff.change_type,  # 元の情報も保持
+                            old_value=cell_diff.old_value,
+                            new_value=cell_diff.new_value
+                        )
+                        diff_results.append(result)
             
             # 5. 完了 (100%)
             if progress_callback:
