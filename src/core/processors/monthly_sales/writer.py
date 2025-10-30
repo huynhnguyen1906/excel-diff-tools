@@ -143,10 +143,7 @@ class MonthlySalesExcelWriter:
                     column=col_idx + 1,
                     value=cell_value
                 )
-                
-                # カテゴリセルのスタイル (グレー背景)
-                if row_idx >= self.HEADER_ROWS:  # データ行のみ
-                    cell.fill = PatternFill(start_color='F0F0F0', end_color='F0F0F0', fill_type='solid')
+                # Note: カテゴリ列(A-C)のスタイルは _apply_styles() で設定
     
     def _write_month_blocks(self, month_diffs: List[MonthlySalesMonthDiff]):
         """月別データブロックを書き込み"""
@@ -191,18 +188,41 @@ class MonthlySalesExcelWriter:
             bottom=Side(style='thin')
         )
         
-        # 全セルに適用
+        # 全セルに適用 (デフォルト)
         for row in self.ws.iter_rows():
             for cell in row:
                 cell.font = default_font
                 cell.border = thin_border
                 cell.alignment = Alignment(horizontal='left', vertical='center')
         
-        # ヘッダー行を太字に
+        # ヘッダー行 (1-6) を太字 + 灰色背景
         for row_idx in range(1, self.HEADER_ROWS + 1):
             for cell in self.ws[row_idx]:
                 cell.font = Font(name='Segoe UI', size=10, bold=True)
                 cell.fill = PatternFill(start_color='E0E0E0', end_color='E0E0E0', fill_type='solid')
+        
+        # カテゴリB列 (col 2) に値がある行 → 行全体を灰色背景 + 太字
+        for row_idx in range(self.DATA_START_ROW, self.ws.max_row + 1):
+            col_b_cell = self.ws.cell(row=row_idx, column=2)  # B列
+            
+            # B列に実際のデータがある場合のみ (None・NaN・空文字・空白を除く)
+            has_data = False
+            if col_b_cell.value is not None:
+                # pandas の NaN をチェック
+                if isinstance(col_b_cell.value, float):
+                    import math
+                    has_data = not math.isnan(col_b_cell.value)
+                else:
+                    has_data = str(col_b_cell.value).strip() != ''
+            
+            if has_data:
+                # 行全体にスタイルを適用
+                for cell in self.ws[row_idx]:
+                    # 既存の背景色を保持 (増減の色がある場合)
+                    if cell.fill.start_color.rgb in [None, '00000000', 'FFFFFFFF']:
+                        cell.fill = PatternFill(start_color='F0F0F0', end_color='F0F0F0', fill_type='solid')
+                    # 太字にする
+                    cell.font = Font(name='Segoe UI', size=10, bold=True)
         
         # 数値列を右寄せに
         for month_idx, month_diff in enumerate(month_diffs):
@@ -213,6 +233,7 @@ class MonthlySalesExcelWriter:
             for col in range(output_start_col, output_end_col + 1):
                 for row_idx in range(self.DATA_START_ROW, self.ws.max_row + 1):
                     cell = self.ws.cell(row=row_idx, column=col)
+                    # 既存のフォント・背景色を保持したまま右寄せに
                     cell.alignment = Alignment(horizontal='right', vertical='center')
     
     def _adjust_column_widths(self):
