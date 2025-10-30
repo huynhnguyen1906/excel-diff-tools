@@ -96,9 +96,9 @@ class MonthlySalesExcelWriter:
     
     def _write_header(self, header_df: pd.DataFrame, month_diffs: List[MonthlySalesMonthDiff]):
         """ヘッダー部分を書き込み"""
-        # ヘッダーの全列を書き込み
+        # カテゴリ列のヘッダー (A-C列) を書き込み
         for row_idx in range(len(header_df)):
-            for col_idx in range(len(header_df.columns)):
+            for col_idx in range(self.CATEGORY_COLUMNS):
                 cell_value = header_df.iloc[row_idx, col_idx]
                 self.ws.cell(
                     row=row_idx + 1,
@@ -106,14 +106,32 @@ class MonthlySalesExcelWriter:
                     value=cell_value
                 )
         
-        # 月名をヘッダーの5行目に書き込み (共通月のみ)
-        for month_diff in month_diffs:
-            start_col = month_diff.column_range[0] + 1  # 1-indexed
-            self.ws.cell(
-                row=5,  # MONTH_ROW
-                column=start_col,
-                value=month_diff.month_name
-            )
+        # 各月ブロックのヘッダーを書き込み (差分がある月のみ)
+        for month_idx, month_diff in enumerate(month_diffs):
+            source_start_col = month_diff.column_range[0]  # 元ファイルの列位置 (0-indexed)
+            
+            # 出力ファイルでの開始列を計算 (カテゴリ3列 + これまでの月ブロック)
+            output_start_col = self.CATEGORY_COLUMNS + (month_idx * 4)
+            
+            # このブロックの4列分のヘッダーを書き込み
+            for row_idx in range(len(header_df)):
+                for col_offset in range(4):  # 4列/ブロック
+                    source_col = source_start_col + col_offset
+                    
+                    # 行5 (index 4) の最初の列には月名を書き込み
+                    if row_idx == 4 and col_offset == 0:
+                        cell_value = month_diff.month_name
+                    elif source_col < len(header_df.columns):
+                        cell_value = header_df.iloc[row_idx, source_col]
+                    else:
+                        cell_value = None
+                    
+                    if cell_value is not None:
+                        self.ws.cell(
+                            row=row_idx + 1,
+                            column=output_start_col + col_offset + 1,  # 1-indexed
+                            value=cell_value
+                        )
     
     def _write_categories(self, category_df: pd.DataFrame):
         """カテゴリ列を書き込み"""
@@ -132,8 +150,9 @@ class MonthlySalesExcelWriter:
     
     def _write_month_blocks(self, month_diffs: List[MonthlySalesMonthDiff]):
         """月別データブロックを書き込み"""
-        for month_diff in month_diffs:
-            start_col = month_diff.column_range[0]  # 0-indexed
+        for month_idx, month_diff in enumerate(month_diffs):
+            # 出力ファイルでの開始列 (カテゴリ3列 + これまでの月ブロック)
+            output_start_col = self.CATEGORY_COLUMNS + (month_idx * 4)
             
             # セル差分を行・列でグループ化
             for cell_diff in month_diff.cell_diffs:
@@ -142,7 +161,7 @@ class MonthlySalesExcelWriter:
                 # 列インデックスを計算 (売上=0, 外部原価=1, 内部原価=2, 営業利益=3)
                 column_names = ['売上', '外部原価', '内部原価', '営業利益']
                 col_offset = column_names.index(cell_diff.column_name)
-                col = start_col + col_offset + 1  # 1-indexed
+                col = output_start_col + col_offset + 1  # 1-indexed
                 
                 # セルに値を書き込み
                 formatted_text = cell_diff.get_formatted_text()
@@ -186,11 +205,12 @@ class MonthlySalesExcelWriter:
                 cell.fill = PatternFill(start_color='E0E0E0', end_color='E0E0E0', fill_type='solid')
         
         # 数値列を右寄せに
-        for month_diff in month_diffs:
-            start_col = month_diff.column_range[0] + 1  # 1-indexed
-            end_col = month_diff.column_range[1] + 1
+        for month_idx, month_diff in enumerate(month_diffs):
+            # 出力ファイルでの列範囲
+            output_start_col = self.CATEGORY_COLUMNS + (month_idx * 4) + 1  # 1-indexed
+            output_end_col = output_start_col + 3  # 4列ブロック
             
-            for col in range(start_col, end_col + 1):
+            for col in range(output_start_col, output_end_col + 1):
                 for row_idx in range(self.DATA_START_ROW, self.ws.max_row + 1):
                     cell = self.ws.cell(row=row_idx, column=col)
                     cell.alignment = Alignment(horizontal='right', vertical='center')
