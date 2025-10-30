@@ -41,6 +41,11 @@ class DiffWorker(QThread):
         self.output_dir = output_dir
         self.error_msg = None
         self.result = None
+        self._cancel_requested = False
+    
+    def cancel(self):
+        """キャンセルをリクエスト"""
+        self._cancel_requested = True
     
     def run(self):
         """バックグラウンドで処理を実行"""
@@ -48,11 +53,21 @@ class DiffWorker(QThread):
             # プロセッサを取得
             self.progress.emit(10, "処理を開始しています...")
             
+            if self._cancel_requested:
+                self.finished.emit(None, "キャンセルされました")
+                return
+            
             try:
                 processor = ProcessorFactory.get_processor(self.sheet_name)
             except ValueError as e:
                 self.finished.emit(None, str(e))
                 return
+            
+            # キャンセルチェック付きのprogress callback
+            def progress_callback(percent, msg):
+                if self._cancel_requested:
+                    raise InterruptedError("キャンセルされました")
+                self.progress.emit(percent, msg)
             
             # プロセッサで処理を実行（progress callbackを渡す）
             output_path, diff_results, error_msg = processor.process(
@@ -60,8 +75,12 @@ class DiffWorker(QThread):
                 self.new_file,
                 self.sheet_name,
                 self.output_dir,
-                progress_callback=lambda percent, msg: self.progress.emit(percent, msg)
+                progress_callback=progress_callback
             )
+            
+            if self._cancel_requested:
+                self.finished.emit(None, "キャンセルされました")
+                return
             
             if output_path is None:
                 self.finished.emit(None, error_msg)
@@ -74,8 +93,13 @@ class DiffWorker(QThread):
             }
             self.finished.emit(result, None)
             
+        except InterruptedError as e:
+            self.finished.emit(None, str(e))
         except Exception as e:
-            self.finished.emit(None, f"処理中にエラーが発生しました:\n{str(e)}")
+            if self._cancel_requested:
+                self.finished.emit(None, "キャンセルされました")
+            else:
+                self.finished.emit(None, f"処理中にエラーが発生しました:\n{str(e)}")
 
 
 class MainWindow(QMainWindow):
@@ -414,11 +438,12 @@ class MainWindow(QMainWindow):
             return
         
         # プログレスダイアログを表示
-        self.progress_dialog = QProgressDialog("処理を開始しています...", None, 0, 100, self)
+        self.progress_dialog = QProgressDialog("処理を開始しています...", "キャンセル", 0, 100, self)
         self.progress_dialog.setWindowTitle("差分検出")
         self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
         self.progress_dialog.setMinimumDuration(0)
         self.progress_dialog.setValue(0)
+        self.progress_dialog.canceled.connect(self._on_progress_canceled)
         
         # 比較ボタンを無効化
         self.compare_button.setEnabled(False)
@@ -443,6 +468,11 @@ class MainWindow(QMainWindow):
         self.progress_dialog.setValue(value)
         self.progress_dialog.setLabelText(message)
     
+    def _on_progress_canceled(self):
+        """プログレスダイアログのキャンセルボタンが押された"""
+        if hasattr(self, 'worker') and self.worker.isRunning():
+            self.worker.cancel()
+    
     def _on_worker_finished(self, result, error_msg):
         """ワーカースレッド完了時の処理"""
         # プログレスダイアログを閉じる
@@ -452,6 +482,9 @@ class MainWindow(QMainWindow):
         self.compare_button.setEnabled(True)
         
         if error_msg:
+            # キャンセルの場合は何も表示しない
+            if error_msg == "キャンセルされました":
+                return
             # エラーの場合
             QMessageBox.critical(self, "エラー", error_msg)
             return
