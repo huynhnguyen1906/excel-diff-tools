@@ -17,9 +17,9 @@ class MonthlySalesExcelReader:
     HEADER_ROWS = 6  # ヘッダーは6行
     CATEGORY_COLUMNS = 3  # カテゴリ列はA, B, C (3列)
     DATA_START_ROW = 7  # データは7行目から開始
-    DATA_START_COLUMN = 4  # データは D列 (index 3) から開始
+    DATA_START_COLUMN = 3  # データは D列 (0-indexed: 3) から開始
     BLOCK_SIZE = 4  # 1ヶ月のブロックは4列
-    MONTH_ROW = 5  # 月名は5行目 (0-indexed: row 4)
+    MONTH_ROW = 5  # 月名は5行目 (1-indexed)
     
     def __init__(self):
         """初期化"""
@@ -75,37 +75,28 @@ class MonthlySalesExcelReader:
             (成功フラグ, エラーメッセージ)
         """
         try:
+            print(f"[DEBUG] validate_sheet 開始: {sheet_name}")
             wb = load_workbook(file_path, read_only=True, data_only=True)
             
             if sheet_name not in wb.sheetnames:
                 wb.close()
                 return False, f"シート '{sheet_name}' が見つかりません"
             
-            ws = wb[sheet_name]
-            
-            # 最低限の行数チェック
-            if ws.max_row < self.DATA_START_ROW:
-                wb.close()
-                return False, f"シートの行数が不足しています (最小: {self.DATA_START_ROW}行)"
-            
-            # 最低限の列数チェック (カテゴリ3列 + 最低1ブロック4列)
-            min_columns = self.CATEGORY_COLUMNS + self.BLOCK_SIZE
-            if ws.max_column < min_columns:
-                wb.close()
-                return False, f"シートの列数が不足しています (最小: {min_columns}列)"
-            
             wb.close()
+            print(f"[DEBUG] validate_sheet 完了: OK")
             return True, None
             
         except Exception as e:
+            print(f"[ERROR] validate_sheet エラー: {str(e)}")
             return False, f"シート検証エラー: {str(e)}"
     
-    def _extract_month_blocks(self, ws: Worksheet) -> Dict[str, Tuple[int, int]]:
+    def _extract_month_blocks(self, ws: Worksheet, max_col: int = 50) -> Dict[str, Tuple[int, int]]:
         """
         月ブロックの情報を抽出 (月名 → (開始列index, 終了列index))
         
         Args:
             ws: ワークシート
+            max_col: スキャンする最大列数 (デフォルト50列)
             
         Returns:
             {月名: (start_col, end_col)} の辞書
@@ -115,7 +106,8 @@ class MonthlySalesExcelReader:
         # 5行目 (MONTH_ROW) をスキャンして月名を探す
         current_col = self.DATA_START_COLUMN  # D列 (index 3) から開始
         
-        while current_col <= ws.max_column:
+        # 最大列数を制限してスキャン（無限ループ防止）
+        while current_col < max_col:
             # openpyxl は 1-indexed なので +1
             cell_value = ws.cell(row=self.MONTH_ROW, column=current_col + 1).value
             
@@ -128,6 +120,19 @@ class MonthlySalesExcelReader:
                     current_col += self.BLOCK_SIZE
                 else:
                     current_col += 1
+            elif cell_value is None:
+                # 空白セルが続いたら終了
+                current_col += 1
+                # 5列連続空白なら終了
+                empty_count = 1
+                while empty_count < 5 and current_col < max_col:
+                    if ws.cell(row=self.MONTH_ROW, column=current_col + 1).value is None:
+                        empty_count += 1
+                        current_col += 1
+                    else:
+                        break
+                if empty_count >= 5:
+                    break
             else:
                 current_col += 1
         
@@ -149,72 +154,85 @@ class MonthlySalesExcelReader:
                 'month_order': [月名リスト]
             }
         """
-        wb = load_workbook(file_path, data_only=True)
-        ws = wb[sheet_name]
-        
-        # ヘッダー部分を読み取り (行1-6, 全列)
-        header_data = []
-        for row_idx in range(1, self.HEADER_ROWS + 1):
-            row_data = []
-            for col_idx in range(1, ws.max_column + 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                row_data.append(cell.value)
-            header_data.append(row_data)
-        
-        header_df = pd.DataFrame(header_data)
-        
-        # カテゴリ列 (A-C) を読み取り
-        category_data = []
-        for row_idx in range(1, ws.max_row + 1):
-            row_data = []
-            for col_idx in range(1, self.CATEGORY_COLUMNS + 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                row_data.append(cell.value)
-            category_data.append(row_data)
-        
-        category_df = pd.DataFrame(category_data, columns=['A', 'B', 'C'])
-        
-        # 月ブロックを抽出
-        month_blocks = self._extract_month_blocks(ws)
-        
-        # 各月ブロックのデータを読み取り
-        month_data = {}
-        month_order = []
-        
-        for month_name, (start_col, end_col) in month_blocks.items():
-            month_order.append(month_name)
+        try:
+            print(f"[DEBUG] シート読み込み開始: {sheet_name}")
             
-            # データ行 (7行目以降) のみを読み取り
-            block_data = []
-            for row_idx in range(self.DATA_START_ROW, ws.max_row + 1):
-                row_data = []
-                for col_idx in range(start_col + 1, end_col + 2):  # +1 for 1-indexed
-                    cell = ws.cell(row=row_idx, column=col_idx)
-                    value = cell.value
-                    
-                    # 数値に変換を試みる
-                    if value is not None:
-                        try:
-                            value = float(value)
-                        except (ValueError, TypeError):
-                            pass
-                    
-                    row_data.append(value)
-                block_data.append(row_data)
+            # pandas で全データを読み込み（header なしで生データとして読む）
+            df_raw = pd.read_excel(
+                file_path,
+                sheet_name=sheet_name,
+                header=None,  # ヘッダーなし（全て生データ）
+                na_values=['', 'NA', 'N/A', 'null', 'NULL', 'None']
+            )
             
-            # 列名は "売上", "外部原価", "内部原価", "営業利益" と仮定
-            columns = ['売上', '外部原価', '内部原価', '営業利益']
-            month_df = pd.DataFrame(block_data, columns=columns)
-            month_data[month_name] = month_df
+            print(f"[DEBUG] pandas読み込み完了: {df_raw.shape}")
+            
+            # ヘッダー部分を抽出 (行0-5, 0-indexed)
+            header_df = df_raw.iloc[0:self.HEADER_ROWS, :].copy()
+            print(f"[DEBUG] ヘッダー抽出: {header_df.shape}")
+            
+            # カテゴリ列を抽出 (列0-2, 全行)
+            category_df = df_raw.iloc[:, 0:self.CATEGORY_COLUMNS].copy()
+            category_df.columns = ['A', 'B', 'C']
+            print(f"[DEBUG] カテゴリ抽出: {category_df.shape}")
+            
+            # 月ブロックを抽出（5行目＝index 4から月名を探す）
+            month_row = df_raw.iloc[self.MONTH_ROW - 1, :]  # 5行目 = index 4
+            month_blocks = {}
+            month_order = []
+            
+            current_col = self.DATA_START_COLUMN  # D列 = index 3
+            
+            for col_idx in range(current_col, len(month_row)):
+                cell_value = month_row.iloc[col_idx]
+                
+                if pd.notna(cell_value) and isinstance(cell_value, str):
+                    # "2024/12月" のような形式を検出
+                    if '月' in cell_value or '/' in cell_value:
+                        month_name = cell_value
+                        start_col = col_idx
+                        end_col = col_idx + self.BLOCK_SIZE - 1
+                        month_blocks[month_name] = (start_col, end_col)
+                        month_order.append(month_name)
+            
+            print(f"[DEBUG] 検出された月ブロック: {month_order}")
+            
+            if not month_blocks:
+                raise ValueError(f"月ブロックが見つかりませんでした。5行目に '月' を含む列が必要です。")
+            
+            # 各月ブロックのデータを抽出
+            month_data = {}
+            
+            for month_name, (start_col, end_col) in month_blocks.items():
+                # データ行 (7行目以降 = index 6以降) を抽出
+                block_df = df_raw.iloc[self.DATA_START_ROW - 1:, start_col:end_col + 1].copy()
+                
+                # 列名を設定
+                block_df.columns = ['売上', '外部原価', '内部原価', '営業利益']
+                
+                # 数値に変換
+                for col in block_df.columns:
+                    block_df[col] = pd.to_numeric(block_df[col], errors='coerce')
+                
+                # indexをリセット
+                block_df.reset_index(drop=True, inplace=True)
+                
+                month_data[month_name] = block_df
+            
+            print(f"[DEBUG] データ読み込み完了: {len(month_data)} 月分")
+            
+            return {
+                'header': header_df,
+                'categories': category_df,
+                'month_blocks': month_data,
+                'month_order': month_order
+            }
         
-        wb.close()
-        
-        return {
-            'header': header_df,
-            'categories': category_df,
-            'month_blocks': month_data,
-            'month_order': month_order
-        }
+        except Exception as e:
+            print(f"[ERROR] read_sheet() でエラー発生: {type(e).__name__}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise RuntimeError(f"シート読み込みエラー: {str(e)}") from e
     
     def get_sheet_info(self, file_path: Path, sheet_name: str) -> Dict:
         """
