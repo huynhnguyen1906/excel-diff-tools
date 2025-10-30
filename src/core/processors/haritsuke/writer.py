@@ -270,5 +270,5 @@ class HaritsukeExcelWriter:
             出力ファイルのパス
         """
         timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-        filename = f"diff_{self.sheet_name}_{timestamp}.xlsx"
+        filename = f"{self.sheet_name}_差分_{timestamp}.xlsx"
         return self.output_dir / filename
