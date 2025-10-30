@@ -85,15 +85,19 @@ class MonthlySalesDiffEngine:
             # ブロックの差分を計算
             cell_diffs = self._compare_blocks(old_block, new_block)
             
-            # 列範囲を計算 (4列分)
-            month_diff = MonthlySalesMonthDiff(
-                month_name=month_name,
-                column_range=(current_col, current_col + 3),
-                cell_diffs=cell_diffs
-            )
+            # 差分がある場合のみ追加（unchanged 以外が存在する場合）
+            has_changes = any(cd.change_type != 'unchanged' for cd in cell_diffs)
             
-            month_diffs.append(month_diff)
-            current_col += 4  # 次のブロックへ
+            if has_changes:
+                # 列範囲を計算 (4列分)
+                month_diff = MonthlySalesMonthDiff(
+                    month_name=month_name,
+                    column_range=(current_col, current_col + 3),
+                    cell_diffs=cell_diffs
+                )
+                
+                month_diffs.append(month_diff)
+                current_col += 4  # 次のブロックへ
         
         return month_diffs
     

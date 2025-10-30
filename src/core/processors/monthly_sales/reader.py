@@ -187,13 +187,22 @@ class MonthlySalesExcelReader:
                 cell_value = month_row.iloc[col_idx]
                 
                 if pd.notna(cell_value) and isinstance(cell_value, str):
-                    # "2024/12月" のような形式を検出
-                    if '月' in cell_value or '/' in cell_value:
+                    # "2024/12月" のような月形式を検出
+                    if '月' in cell_value and '/' in cell_value:
                         month_name = cell_value
                         start_col = col_idx
                         end_col = col_idx + self.BLOCK_SIZE - 1
                         month_blocks[month_name] = (start_col, end_col)
                         month_order.append(month_name)
+                    # "全体の売上" のような全体ブロックを検出
+                    elif cell_value.startswith('全体の'):
+                        # 全体ブロックの最初の列（売上）を検出したら
+                        if '売上' in cell_value:
+                            month_name = '全体'  # 全体ブロックの名前
+                            start_col = col_idx
+                            end_col = col_idx + self.BLOCK_SIZE - 1
+                            month_blocks[month_name] = (start_col, end_col)
+                            month_order.append(month_name)
             
             print(f"[DEBUG] 検出された月ブロック: {month_order}")
             
