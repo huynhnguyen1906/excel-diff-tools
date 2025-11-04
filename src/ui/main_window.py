@@ -110,6 +110,7 @@ class MainWindow(QMainWindow):
         self.old_file_path = None
         self.new_file_path = None
         self.output_dir = get_executable_dir()  # デフォルトは実行ファイルのディレクトリ
+        self.last_browsed_dir = get_executable_dir()  # 最後に参照したディレクトリ
         self._init_ui()
     
     def _init_ui(self):
@@ -393,10 +394,11 @@ class MainWindow(QMainWindow):
             )
             return
         
+        # 最後に参照したディレクトリから開始
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Excelファイルを選択",
-            str(get_executable_dir()),
+            str(self.last_browsed_dir),
             "Excel Files (*.xlsx *.xlsm);;All Files (*)"
         )
         
@@ -408,6 +410,9 @@ class MainWindow(QMainWindow):
                 self.old_file_path = file_path_obj
             else:
                 self.new_file_path = file_path_obj
+            
+            # 最後に参照したディレクトリを更新
+            self.last_browsed_dir = file_path_obj.parent
     
     def _on_output_browse_clicked(self):
         """出力先フォルダ選択ボタンのクリックイベント"""
