@@ -77,9 +77,17 @@ class MonthlySalesProcessor(BaseProcessor):
             diff_engine = MonthlySalesDiffEngine()
             month_diffs = diff_engine.compare_sheets(old_data, new_data)
             
-            # 共通月が存在しない場合
-            if not month_diffs:
+            # 共通月が存在するか確認
+            old_months = set(old_data['month_blocks'].keys())
+            new_months = set(new_data['month_blocks'].keys())
+            common_months = old_months & new_months
+            
+            if not common_months:
+                # 共通月が無い場合
                 return None, None, "共通の月が見つかりませんでした。\n旧ファイルと新ファイルで同じ月のデータが存在しません。"
+            elif not month_diffs:
+                # 共通月はあるが差分が無い場合
+                return None, None, "データに差分がありませんでした。\n旧ファイルと新ファイルのデータは完全に一致しています。"
             
             # 3. Excel出力 (80%)
             if progress_callback:

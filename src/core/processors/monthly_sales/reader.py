@@ -75,7 +75,6 @@ class MonthlySalesExcelReader:
             (成功フラグ, エラーメッセージ)
         """
         try:
-            print(f"[DEBUG] validate_sheet 開始: {sheet_name}")
             wb = load_workbook(file_path, read_only=True, data_only=True)
             
             if sheet_name not in wb.sheetnames:
@@ -83,7 +82,6 @@ class MonthlySalesExcelReader:
                 return False, f"シート '{sheet_name}' が見つかりません"
             
             wb.close()
-            print(f"[DEBUG] validate_sheet 完了: OK")
             return True, None
             
         except Exception as e:
@@ -155,7 +153,6 @@ class MonthlySalesExcelReader:
             }
         """
         try:
-            print(f"[DEBUG] シート読み込み開始: {sheet_name}")
             
             # pandas で全データを読み込み（header なしで生データとして読む）
             df_raw = pd.read_excel(
@@ -165,16 +162,13 @@ class MonthlySalesExcelReader:
                 na_values=['', 'NA', 'N/A', 'null', 'NULL', 'None']
             )
             
-            print(f"[DEBUG] pandas読み込み完了: {df_raw.shape}")
             
             # ヘッダー部分を抽出 (行0-5, 0-indexed)
             header_df = df_raw.iloc[0:self.HEADER_ROWS, :].copy()
-            print(f"[DEBUG] ヘッダー抽出: {header_df.shape}")
             
             # カテゴリ列を抽出 (列0-2, 全行)
             category_df = df_raw.iloc[:, 0:self.CATEGORY_COLUMNS].copy()
             category_df.columns = ['A', 'B', 'C']
-            print(f"[DEBUG] カテゴリ抽出: {category_df.shape}")
             
             # 月ブロックを抽出（5行目＝index 4から月名を探す）
             month_row = df_raw.iloc[self.MONTH_ROW - 1, :]  # 5行目 = index 4
@@ -204,7 +198,6 @@ class MonthlySalesExcelReader:
                             month_blocks[month_name] = (start_col, end_col)
                             month_order.append(month_name)
             
-            print(f"[DEBUG] 検出された月ブロック: {month_order}")
             
             if not month_blocks:
                 raise ValueError(f"月ブロックが見つかりませんでした。5行目に '月' を含む列が必要です。")
@@ -228,7 +221,6 @@ class MonthlySalesExcelReader:
                 
                 month_data[month_name] = block_df
             
-            print(f"[DEBUG] データ読み込み完了: {len(month_data)} 月分")
             
             return {
                 'header': header_df,

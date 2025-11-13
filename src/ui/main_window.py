@@ -490,7 +490,13 @@ class MainWindow(QMainWindow):
             # キャンセルの場合は何も表示しない
             if error_msg == "キャンセルされました":
                 return
-            # エラーの場合
+            
+            # データに差分が無い場合は情報ダイアログで表示
+            if "データに差分がありませんでした" in error_msg:
+                QMessageBox.information(self, "情報", error_msg)
+                return
+            
+            # その他のエラーの場合
             QMessageBox.critical(self, "エラー", error_msg)
             return
         
