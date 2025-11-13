@@ -83,6 +83,10 @@ class HaritsukeProcessor(BaseProcessor):
                 old_df_aligned, new_df_aligned
             )
             
+            # 差分が無い場合
+            if not diff_results:
+                return None, None, "データに差分がありませんでした。\n旧ファイルと新ファイルのデータは完全に一致しています。"
+            
             # Step 4: Excel 出力
             if progress_callback:
                 progress_callback(80, "結果を出力しています...")
