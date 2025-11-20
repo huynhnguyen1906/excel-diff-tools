@@ -10,6 +10,8 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.cell.text import InlineFont
+from openpyxl.cell.rich_text import TextBlock, CellRichText
 
 from .diff_engine import HaritsukeDiffResult
 from utils.constants import DIFF_COLORS
@@ -194,30 +196,33 @@ class HaritsukeExcelWriter:
     
     def _create_rich_text(self, old_value, new_value):
         """
-        セルのリッチテキストを作成（~old~ → new の形式）
-        
-        Note: openpyxl の rich text API に制限があるため、
-        "~旧値~ → 新値" という文字列表現を使用
+        セルのリッチテキストを作成（~old~ → new の形式、new は太字）
         
         Args:
             old_value: 旧値
             new_value: 新値
             
         Returns:
-            文字列（"~旧値~ → 新値" の形式）
+            CellRichText オブジェクト（新値は太字）
         """
         # 値を文字列に変換
         old_str = '' if pd.isna(old_value) else str(old_value)
         new_str = '' if pd.isna(new_value) else str(new_value)
         
-        # ~old~ → new の形式で返す
-        # 取り消し線は ~ で表現
+        # フォント設定
+        normal_font = InlineFont(rFont='Segoe UI', sz=10)
+        bold_font = InlineFont(rFont='Segoe UI', b=True, sz=10)
+        
+        # ~old~ → new の形式でリッチテキストを作成
         if old_str and new_str:
-            return f"~{old_str}~ → {new_str}"
+            return CellRichText(
+                TextBlock(normal_font, f"~{old_str}~ → "),
+                TextBlock(bold_font, new_str)
+            )
         elif old_str:
             return f"~{old_str}~"
         elif new_str:
-            return new_str
+            return CellRichText(TextBlock(bold_font, new_str))
         else:
             return ""
     
