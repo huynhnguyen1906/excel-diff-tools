@@ -83,6 +83,34 @@ class HaritsukeProcessor(BaseProcessor):
                 old_df_aligned, new_df_aligned
             )
             
+            # 更新日時列のみの変更を除外
+            # 更新日時列名（複数の可能性を考慮）
+            update_time_columns = ['更新日時', '更新日', 'UpdateTime', 'UpdateDate']
+            
+            filtered_results = []
+            for result in diff_results:
+                if result.change_type == 'changed':
+                    # 更新日時以外の列に変更があるかチェック
+                    has_other_changes = any(
+                        col not in update_time_columns 
+                        for col in result.changed_columns
+                    )
+                    
+                    # 更新日時以外の変更がある場合のみ追加
+                    if has_other_changes:
+                        # changed_columns はそのまま維持（更新日時も含む）
+                        filtered_results.append(result)
+                    # else: 更新日時のみの変更 → 除外
+                else:
+                    # added/deleted は常に含める
+                    filtered_results.append(result)
+            
+            # row_index を再割り当て（連番にする）
+            for idx, result in enumerate(filtered_results, start=1):
+                result.row_index = idx
+            
+            diff_results = filtered_results
+            
             # 差分が無い場合
             if not diff_results:
                 return None, None, "データに差分がありませんでした。\n旧ファイルと新ファイルのデータは完全に一致しています。"
